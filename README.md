@@ -1,6 +1,10 @@
 # ForgeUI Tunnel Run — ESP32-S3 + ST7789 284×76
 
-ForgeUI Tunnel Run is a physically tested, joystick-controlled procedural tunnel game and graphics stress test for an ESP32-S3 and an ultra-wide 2.25-inch ST7789 76×284 IPS TFT. It runs in a 284×76 landscape viewport.
+ForgeUI Tunnel Run is an official ForgeUI Hardware Lab project: a physically tested, joystick-controlled procedural tunnel and arcade-graphics showcase for the ESP32-S3 DevKitC-1 and ultra-wide ST7789 284×76 display.
+
+It builds on the physically proven [ForgeUI ST7789 284×76 wide-display baseline](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide) and belongs to the wider ForgeUI ESP32 hardware/project ecosystem. ForgeUI is developed by [RTechAI](https://github.com/RTechAI).
+
+Physical Hardware Lab validation does not by itself mean this display target is currently integrated into ForgeUI Studio.
 
 ![ForgeUI Tunnel Run physical game lifecycle](splash_Tunnelrun.png)
 
@@ -40,17 +44,17 @@ The module's **+5V-labelled supply pin is intentionally powered from the ESP32-S
 ## Tunnel Run graphical and technical features
 
 - ForgeUI Tunnel Run title screen and joystick launch
-- Automatic joystick centre calibration and dead zone
-- X/Y ship control
+- Automatic 64-sample joystick-centre calibration and 180-unit dead zone
+- Joystick X/Y controls craft movement; normal speed progresses automatically
 - Full-screen 16-bit `TFT_eSprite` framebuffer
 - Approximately 30 FPS target loop
 - Multi-layer moving starfield, including boosted star streaks
-- Procedural tunnel generation and animated tunnel boundaries
-- Progressive tunnel narrowing, difficulty, and speed increase
-- Joystick-button boost and boost recharge meter
-- Exhaust particles
-- Tunnel collision detection, explosion particles, and impact screen shake
-- Distance scoring and best distance
+- Procedural sinusoidal tunnel generation, scrolling, and animated boundaries
+- Progressive tunnel narrowing with distance; normal speed rises from about 1.7 to 4.2
+- Button-edge launch/relaunch; button-hold boost at 1.75× current speed, with drain, recharge, and meter
+- Exhaust and explosion particles, plus impact screen shake
+- Tunnel collision detection
+- Distance scoring and in-session best distance
 - `CRITICAL IMPACT` and `MISSION LOST` states, with press-to-relaunch flow
 
 ## Hardware
@@ -111,15 +115,25 @@ This original physical display bring-up result validates the wiring, orientation
 
 This project uses PlatformIO with the Arduino framework for ESP32. The physically proven board, display, and library configuration is in `platformio.ini`; the Tunnel Run implementation is in `src/main.cpp`.
 
-## Related ForgeUI wide-display projects
+## Related ForgeUI Projects
 
-- [ST7789 284×76 hardware reference](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide)
-- [MicroDash graphical showcase](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide-microdash)
-- [MicroRacer game](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide-microracer)
+- [Golden ST7789 284×76 Wide Display](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide) — known-good physical ESP32-S3/ST7789 284×76 baseline.
+- [ForgeUI MicroDash](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide-microdash) — compact dashboard/instrumentation graphics showcase.
+- [ForgeUI MicroRacer](https://github.com/RTechAI/forgeui-hw-st7789-284x76-wide-microracer) — joystick-controlled racing/arcade graphics showcase.
 
-## ForgeUI Hardware Lab and Studio
+## ForgeUI Hardware Lab
 
-Tunnel Run is part of the ForgeUI Hardware Lab: practical, physically tested ESP32 projects documenting real display and input integrations. Explore [ForgeUI](https://forgeui.co.nz) and the hosted [ForgeUI Studio](https://studio.forgeui.co.nz).
+ForgeUI Hardware Lab is an RTechAI/ForgeUI collection of physically tested ESP32 boards, displays, peripherals, examples, and experimental projects. It establishes reproducible hardware baselines through hardware identification, minimal bring-up, physical proof, and preservation of known-good configurations. Demonstrations and candidate targets can then be evaluated for future ForgeUI Studio workflows.
+
+This project's physical validation does not by itself indicate that the ST7789 284×76 target is currently integrated into ForgeUI Studio.
+
+## About ForgeUI
+
+ForgeUI is developed by [RTechAI](https://github.com/RTechAI). [ForgeUI Studio](https://studio.forgeui.co.nz) is a visual embedded UI/HMI development environment for supported ESP32 hardware.
+
+[ForgeUI](https://forgeui.co.nz) Hardware Lab preserves reproducible physical evidence and evaluates hardware and examples for ForgeUI workflows.
+
+[ForgeUI Hosted Studio](https://studio.forgeui.co.nz) is available for public registration.
 
 ## Third-party dependency attribution
 
