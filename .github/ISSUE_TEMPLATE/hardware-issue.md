@@ -1,16 +1,17 @@
 ---
-name: ForgeUI MicroRacer Issue
-about: Report a MicroRacer game, joystick, display, build, or hardware problem
-title: "[MicroRacer] "
+name: ForgeUI Tunnel Run Issue
+about: Report a Tunnel Run game, joystick, display, build, or hardware problem
+title: "[Tunnel Run] "
 labels: hardware
 assignees: ''
 ---
 
-# ForgeUI MicroRacer Issue
+# ForgeUI Tunnel Run Issue
 
-Thanks for testing this physically proven ESP32-S3, ST7789, and analog-joystick game project.
+Thanks for testing this physically proven ESP32-S3, ST7789, and analog-joystick procedural tunnel game.
 
 **ForgeUI:** https://forgeui.co.nz
+
 **ForgeUI Studio:** https://studio.forgeui.co.nz
 
 ## Problem
@@ -21,12 +22,13 @@ Describe what happened, what you expected, and the shortest sequence that reprod
 
 Where did the problem occur?
 
-- [ ] Title screen
+- [ ] Title / launch
 - [ ] Joystick calibration
-- [ ] Gameplay
+- [ ] Gameplay / steering
 - [ ] Boost
-- [ ] Collision / CRASH animation
-- [ ] GAME OVER / restart
+- [ ] Tunnel rendering
+- [ ] Collision / `CRITICAL IMPACT`
+- [ ] `MISSION LOST` / relaunch
 - [ ] Build or flash
 - [ ] Other (describe below)
 
@@ -53,7 +55,7 @@ Please provide:
 
 List the wiring you are using.
 
-### Physically validated reference wiring
+### Physically proven reference wiring
 
 | Display | ESP32-S3 | Function |
 |---|---:|---|
@@ -66,16 +68,16 @@ List the wiring you are using.
 | CS | GPIO8 | Chip select |
 | BL | GND | Active-low backlight |
 
-## Joystick and controls
+## Joystick, steering, and boost
 
 Please provide:
 
 - Joystick module/model or product link:
-- Joystick wiring (SW, VRy, VRx, supply, GND):
+- Joystick mapping and wiring (SW, VRy, VRx, supply, GND):
 - Observed joystick centre/calibration values, if available:
-- Steering behaviour (X/Y direction, range, drift, or dead zone):
+- X/Y steering behaviour (direction, range, drift, or dead zone):
 - Button behaviour:
-- Boost behaviour:
+- Boost behaviour and meter response:
 
 ### Physically proven joystick mapping
 
@@ -89,15 +91,16 @@ Please provide:
 
 GPIO7 is spare. The +5V-labelled joystick supply pin is intentionally powered from 3.3V for this project.
 
-## Gameplay behaviour
+## Tunnel and impact behaviour
 
 Describe the observed behaviour for any relevant items:
 
-- Traffic or increasing difficulty:
-- Score or best score:
-- Collision detection:
-- CRASH animation / particles:
-- GAME OVER and restart:
+- Tunnel rendering, boundaries, or scrolling:
+- Difficulty, narrowing, or speed increase:
+- Starfield or exhaust particles:
+- Tunnel collision and `CRITICAL IMPACT`:
+- Distance / best distance:
+- `MISSION LOST` and relaunch:
 
 ## Software environment
 
@@ -116,7 +119,7 @@ Paste the relevant output inside a code block. For large logs, attach a file.
 
 ## Physical photos
 
-Physical photos are especially useful. If possible, include the ESP32 board, display, joystick wiring, and the on-screen state where the problem occurs.
+Physical photos are especially useful. If possible, include the ESP32 board, display, joystick wiring, and the on-screen game state where the problem occurs.
 
 ## Additional information
 

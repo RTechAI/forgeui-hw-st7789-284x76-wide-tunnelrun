@@ -3,7 +3,7 @@
 #include <math.h>
 
 // ============================================================
-// ForgeUI MicroRacer
+// ForgeUI Tunnel Run
 // ESP32-S3 + ST7789 284x76 + Analog Joystick
 // ============================================================
 
@@ -13,22 +13,22 @@ TFT_eSprite frame = TFT_eSprite(&tft);
 constexpr int W = 284;
 constexpr int H = 76;
 
-// Physically proven joystick wiring
+// Physically proven joystick mapping
 constexpr int JOY_X  = 6;
 constexpr int JOY_Y  = 5;
 constexpr int JOY_SW = 4;
 
 // Colours
-constexpr uint16_t COL_BG       = TFT_BLACK;
-constexpr uint16_t COL_WHITE    = TFT_WHITE;
-constexpr uint16_t COL_CYAN     = TFT_CYAN;
-constexpr uint16_t COL_GREEN    = TFT_GREEN;
-constexpr uint16_t COL_YELLOW   = TFT_YELLOW;
-constexpr uint16_t COL_RED      = TFT_RED;
-constexpr uint16_t COL_BLUE     = TFT_BLUE;
-constexpr uint16_t COL_GREY     = 0x8410;
-constexpr uint16_t COL_DKGREY   = 0x3186;
-constexpr uint16_t COL_ROAD     = 0x2104;
+constexpr uint16_t BLACK    = TFT_BLACK;
+constexpr uint16_t WHITE    = TFT_WHITE;
+constexpr uint16_t CYAN     = TFT_CYAN;
+constexpr uint16_t GREEN    = TFT_GREEN;
+constexpr uint16_t YELLOW   = TFT_YELLOW;
+constexpr uint16_t RED      = TFT_RED;
+constexpr uint16_t BLUE     = TFT_BLUE;
+constexpr uint16_t GREY     = 0x8410;
+constexpr uint16_t DKGREY   = 0x2104;
+constexpr uint16_t DARKCYAN = 0x03EF;
 
 // ============================================================
 // Game state
@@ -47,42 +47,52 @@ GameState state = TITLE;
 int joyCentreX = 2048;
 int joyCentreY = 2048;
 
-float playerX = 38.0f;
-float playerY = 38.0f;
+float shipX = 48.0f;
+float shipY = 38.0f;
 
-float roadOffset = 0.0f;
-float speedValue = 1.8f;
-
-uint32_t score = 0;
-uint32_t highScore = 0;
-
+float gameSpeed = 1.7f;
 float boost = 100.0f;
 bool boosting = false;
+
+uint32_t distanceScore = 0;
+uint32_t bestScore = 0;
 
 unsigned long stateStart = 0;
 unsigned long lastFrame = 0;
 
 // ============================================================
-// Traffic
+// Tunnel
 // ============================================================
 
-struct TrafficCar
+constexpr int SEGMENT_W = 7;
+constexpr int SEGMENTS = (W / SEGMENT_W) + 4;
+
+float tunnelCentre[SEGMENTS];
+float tunnelHalf[SEGMENTS];
+
+float tunnelPhase = 0.0f;
+float tunnelScroll = 0.0f;
+
+// ============================================================
+// Stars
+// ============================================================
+
+struct Star
 {
     float x;
     float y;
     float speed;
     uint16_t colour;
-    bool active;
 };
 
-constexpr int TRAFFIC_COUNT = 5;
-TrafficCar traffic[TRAFFIC_COUNT];
+constexpr int STAR_COUNT = 34;
+Star stars[STAR_COUNT];
 
 // ============================================================
-// Crash particles
+// Exhaust particles
 // ============================================================
 
-struct Particle
+struct ExhaustParticle
 {
     float x;
     float y;
@@ -92,8 +102,25 @@ struct Particle
     uint16_t colour;
 };
 
-constexpr int PARTICLE_COUNT = 18;
-Particle particles[PARTICLE_COUNT];
+constexpr int EXHAUST_COUNT = 22;
+ExhaustParticle exhaustParticles[EXHAUST_COUNT];
+
+// ============================================================
+// Explosion particles
+// ============================================================
+
+struct ExplosionParticle
+{
+    float x;
+    float y;
+    float vx;
+    float vy;
+    int life;
+    uint16_t colour;
+};
+
+constexpr int EXPLOSION_COUNT = 28;
+ExplosionParticle explosion[EXPLOSION_COUNT];
 
 // ============================================================
 // Helpers
@@ -104,20 +131,15 @@ bool buttonPressed()
     return digitalRead(JOY_SW) == LOW;
 }
 
-void pushFrame()
-{
-    frame.pushSprite(0, 0);
-}
-
 void centreText(const String &text, int y, int font, uint16_t colour)
 {
     frame.setTextDatum(MC_DATUM);
     frame.setTextFont(font);
-    frame.setTextColor(colour, COL_BG);
+    frame.setTextColor(colour, BLACK);
     frame.drawString(text, W / 2, y);
 }
 
-float joystickAxis(int raw, int centre)
+float readAxis(int raw, int centre)
 {
     constexpr int deadZone = 180;
 
@@ -126,14 +148,26 @@ float joystickAxis(int raw, int centre)
     if (abs(delta) < deadZone)
         return 0.0f;
 
-    float value;
+    float value = 0.0f;
 
     if (delta > 0)
-        value = (float)(delta - deadZone) /
-                (4095 - centre - deadZone);
+    {
+        int range = 4095 - centre - deadZone;
+
+        if (range > 0)
+            value =
+                (float)(delta - deadZone) /
+                (float)range;
+    }
     else
-        value = (float)(delta + deadZone) /
-                (centre - deadZone);
+    {
+        int range = centre - deadZone;
+
+        if (range > 0)
+            value =
+                (float)(delta + deadZone) /
+                (float)range;
+    }
 
     return constrain(value, -1.0f, 1.0f);
 }
@@ -149,10 +183,12 @@ void calibrateJoystick()
 
     constexpr int samples = 64;
 
-    frame.fillSprite(COL_BG);
-    centreText("FORGEUI", 25, 4, COL_CYAN);
-    centreText("CALIBRATING JOYSTICK", 52, 1, COL_WHITE);
-    pushFrame();
+    frame.fillSprite(BLACK);
+
+    centreText("FORGEUI", 25, 4, CYAN);
+    centreText("CALIBRATING FLIGHT CONTROL", 52, 1, WHITE);
+
+    frame.pushSprite(0, 0);
 
     for (int i = 0; i < samples; i++)
     {
@@ -172,199 +208,338 @@ void calibrateJoystick()
 }
 
 // ============================================================
-// Traffic
+// Stars
 // ============================================================
 
-void spawnTraffic(TrafficCar &car, float offset)
+void resetStar(Star &s, bool randomX)
 {
-    car.x = W + offset;
+    s.x = randomX ? random(0, W) : W + random(0, 30);
+    s.y = random(14, H - 3);
 
-    // Road usable vertical area
-    car.y = random(24, 59);
+    int layer = random(0, 3);
 
-    car.speed = random(5, 16) * 0.05f;
-
-    const uint16_t colours[] =
+    if (layer == 0)
     {
-        COL_RED,
-        COL_YELLOW,
-        COL_CYAN,
-        COL_WHITE,
-        COL_BLUE
-    };
-
-    car.colour = colours[random(0, 5)];
-    car.active = true;
+        s.speed = 0.5f;
+        s.colour = DKGREY;
+    }
+    else if (layer == 1)
+    {
+        s.speed = 1.0f;
+        s.colour = GREY;
+    }
+    else
+    {
+        s.speed = 1.7f;
+        s.colour = WHITE;
+    }
 }
 
-void resetTraffic()
+void initStars()
 {
-    for (int i = 0; i < TRAFFIC_COUNT; i++)
-        spawnTraffic(traffic[i], 55.0f + i * 65.0f);
+    for (int i = 0; i < STAR_COUNT; i++)
+        resetStar(stars[i], true);
+}
+
+void updateStars(float speedMultiplier)
+{
+    for (int i = 0; i < STAR_COUNT; i++)
+    {
+        Star &s = stars[i];
+
+        s.x -= s.speed * speedMultiplier;
+
+        if (s.x < 0)
+            resetStar(s, false);
+
+        if (s.speed > 1.5f)
+        {
+            frame.drawFastHLine(
+                (int)s.x,
+                (int)s.y,
+                boosting ? 5 : 2,
+                s.colour
+            );
+        }
+        else
+        {
+            frame.drawPixel(
+                (int)s.x,
+                (int)s.y,
+                s.colour
+            );
+        }
+    }
 }
 
 // ============================================================
-// Drawing
+// Tunnel generation
 // ============================================================
 
-void drawRoad()
+void generateTunnel()
 {
-    // Grass/background
-    frame.fillSprite(COL_BG);
+    float difficulty =
+        constrain(distanceScore / 3000.0f, 0.0f, 1.0f);
 
-    // Road
-    frame.fillRect(0, 17, W, 50, COL_ROAD);
+    float baseHalfWidth =
+        25.0f - difficulty * 8.0f;
 
-    // Road edges
-    frame.drawFastHLine(0, 17, W, COL_CYAN);
-    frame.drawFastHLine(0, 66, W, COL_BLUE);
-
-    // Scrolling lane markers
-    constexpr int markerWidth = 22;
-    constexpr int gap = 18;
-    constexpr int spacing = markerWidth + gap;
-
-    int offset = ((int)roadOffset) % spacing;
-
-    for (int x = -spacing; x < W + spacing; x += spacing)
+    for (int i = 0; i < SEGMENTS; i++)
     {
-        int px = x - offset;
+        float worldX =
+            tunnelPhase + i * 0.28f;
 
-        frame.fillRect(
-            px,
-            41,
-            markerWidth,
-            2,
-            COL_GREY
+        float centre =
+            39.0f +
+            sinf(worldX) * 8.0f +
+            sinf(worldX * 0.43f) * 5.0f +
+            sinf(worldX * 0.19f) * 3.0f;
+
+        float widthVariation =
+            sinf(worldX * 0.71f) * 3.0f;
+
+        tunnelCentre[i] = centre;
+
+        tunnelHalf[i] =
+            constrain(
+                baseHalfWidth + widthVariation,
+                14.0f,
+                27.0f
+            );
+    }
+}
+
+// ============================================================
+// Tunnel drawing
+// ============================================================
+
+void drawTunnel()
+{
+    for (int i = 0; i < SEGMENTS - 1; i++)
+    {
+        int x1 =
+            i * SEGMENT_W - (int)tunnelScroll;
+
+        int x2 = x1 + SEGMENT_W;
+
+        if (x2 < 0 || x1 >= W)
+            continue;
+
+        int top1 =
+            (int)(tunnelCentre[i] - tunnelHalf[i]);
+
+        int top2 =
+            (int)(tunnelCentre[i + 1] - tunnelHalf[i + 1]);
+
+        int bottom1 =
+            (int)(tunnelCentre[i] + tunnelHalf[i]);
+
+        int bottom2 =
+            (int)(tunnelCentre[i + 1] + tunnelHalf[i + 1]);
+
+        top1 = constrain(top1, 13, H - 15);
+        top2 = constrain(top2, 13, H - 15);
+
+        bottom1 = constrain(bottom1, 15, H - 2);
+        bottom2 = constrain(bottom2, 15, H - 2);
+
+        // Upper wall
+        frame.fillTriangle(
+            x1, 13,
+            x2, 13,
+            x1, top1,
+            DKGREY
+        );
+
+        frame.fillTriangle(
+            x2, 13,
+            x2, top2,
+            x1, top1,
+            DKGREY
+        );
+
+        // Lower wall
+        frame.fillTriangle(
+            x1, bottom1,
+            x2, bottom2,
+            x1, H - 1,
+            DKGREY
+        );
+
+        frame.fillTriangle(
+            x2, bottom2,
+            x2, H - 1,
+            x1, H - 1,
+            DKGREY
+        );
+
+        // Bright boundaries
+        frame.drawLine(
+            x1, top1,
+            x2, top2,
+            CYAN
+        );
+
+        frame.drawLine(
+            x1, bottom1,
+            x2, bottom2,
+            BLUE
+        );
+
+        // Upper glow
+        frame.drawLine(
+            x1, top1 - 1,
+            x2, top2 - 1,
+            DARKCYAN
         );
     }
 }
 
-void drawPlayer()
+// ============================================================
+// Ship
+// ============================================================
+
+void drawShip()
 {
-    int x = (int)playerX;
-    int y = (int)playerY;
+    int x = (int)shipX;
+    int y = (int)shipY;
 
-    // Shadow
-    frame.fillRect(x - 7, y - 4, 16, 9, COL_DKGREY);
-
-    // Car body
-    frame.fillRoundRect(
-        x - 7,
-        y - 5,
-        14,
-        10,
-        2,
-        COL_CYAN
-    );
-
-    // Nose
-    frame.fillRect(
-        x + 5,
-        y - 3,
-        4,
-        6,
-        COL_WHITE
-    );
-
-    // Cockpit
-    frame.fillRect(
-        x - 2,
-        y - 3,
-        4,
-        6,
-        COL_BLUE
-    );
-
-    // Wheels
-    frame.fillRect(x - 5, y - 7, 4, 2, COL_WHITE);
-    frame.fillRect(x - 5, y + 5, 4, 2, COL_WHITE);
-
-    if (boosting)
-    {
-        frame.drawFastHLine(x - 12, y - 2, 5, COL_YELLOW);
-        frame.drawFastHLine(x - 15, y, 8, COL_RED);
-        frame.drawFastHLine(x - 12, y + 2, 5, COL_YELLOW);
-    }
-}
-
-void drawTrafficCar(const TrafficCar &car)
-{
-    int x = (int)car.x;
-    int y = (int)car.y;
-
-    frame.fillRoundRect(
-        x - 7,
-        y - 5,
-        14,
-        10,
-        2,
-        car.colour
+    frame.fillTriangle(
+        x + 9, y,
+        x - 6, y - 5,
+        x - 6, y + 5,
+        CYAN
     );
 
     frame.fillRect(
         x - 5,
-        y - 3,
-        4,
-        6,
-        COL_DKGREY
+        y - 2,
+        8,
+        5,
+        WHITE
     );
-
-    frame.fillRect(x + 4, y - 6, 3, 2, COL_WHITE);
-    frame.fillRect(x + 4, y + 4, 3, 2, COL_WHITE);
-}
-
-void drawHUD()
-{
-    frame.setTextDatum(TL_DATUM);
-    frame.setTextFont(1);
-
-    frame.setTextColor(COL_CYAN, COL_BG);
-    frame.drawString("FORGEUI", 3, 3);
-
-    char scoreText[24];
-    snprintf(scoreText, sizeof(scoreText), "S:%06lu", score);
-
-    frame.setTextColor(COL_WHITE, COL_BG);
-    frame.drawString(scoreText, 65, 3);
-
-    int shownSpeed = (int)(speedValue * 55.0f);
-
-    char speedText[20];
-    snprintf(speedText, sizeof(speedText), "%03d", shownSpeed);
-
-    frame.setTextColor(COL_YELLOW, COL_BG);
-    frame.drawString(speedText, 157, 3);
-
-    frame.setTextColor(COL_WHITE, COL_BG);
-    frame.drawString("BOOST", 202, 3);
-
-    frame.drawRect(240, 4, 40, 7, COL_GREY);
-
-    int boostWidth = map((int)boost, 0, 100, 0, 36);
-
-    uint16_t boostColour =
-        boost > 25 ? COL_GREEN : COL_RED;
 
     frame.fillRect(
-        242,
-        6,
-        boostWidth,
+        x,
+        y - 1,
+        4,
         3,
-        boostColour
+        BLUE
     );
+
+    frame.drawLine(
+        x - 4, y - 4,
+        x - 9, y - 7,
+        WHITE
+    );
+
+    frame.drawLine(
+        x - 4, y + 4,
+        x - 9, y + 7,
+        WHITE
+    );
+
+    frame.fillRect(
+        x - 8,
+        y - 2,
+        3,
+        5,
+        boosting ? YELLOW : GREEN
+    );
+}
+
+// ============================================================
+// Exhaust
+// ============================================================
+
+void spawnExhaust()
+{
+    for (int i = 0; i < EXHAUST_COUNT; i++)
+    {
+        if (exhaustParticles[i].life > 0)
+            continue;
+
+        ExhaustParticle &p = exhaustParticles[i];
+
+        p.x = shipX - 9;
+        p.y = shipY + random(-2, 3);
+
+        p.vx =
+            boosting
+                ? random(-45, -20) * 0.10f
+                : random(-25, -10) * 0.10f;
+
+        p.vy =
+            random(-8, 9) * 0.05f;
+
+        p.life =
+            boosting
+                ? random(8, 18)
+                : random(5, 11);
+
+        p.colour =
+            boosting
+                ? (random(0, 2) ? YELLOW : RED)
+                : CYAN;
+
+        break;
+    }
+}
+
+void updateExhaust()
+{
+    spawnExhaust();
+
+    if (boosting)
+        spawnExhaust();
+
+    for (int i = 0; i < EXHAUST_COUNT; i++)
+    {
+        ExhaustParticle &p = exhaustParticles[i];
+
+        if (p.life <= 0)
+            continue;
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        p.life--;
+
+        frame.drawFastHLine(
+            (int)p.x,
+            (int)p.y,
+            boosting ? 4 : 2,
+            p.colour
+        );
+    }
 }
 
 // ============================================================
 // Collision
 // ============================================================
 
-bool collisionWith(const TrafficCar &car)
+bool shipHitTunnel()
 {
-    float dx = fabs(playerX - car.x);
-    float dy = fabs(playerY - car.y);
+    int segment =
+        constrain(
+            ((int)shipX + (int)tunnelScroll) / SEGMENT_W,
+            0,
+            SEGMENTS - 1
+        );
 
-    return dx < 12.0f && dy < 9.0f;
+    float top =
+        tunnelCentre[segment] -
+        tunnelHalf[segment];
+
+    float bottom =
+        tunnelCentre[segment] +
+        tunnelHalf[segment];
+
+    constexpr float shipRadius = 6.0f;
+
+    return
+        shipY - shipRadius < top ||
+        shipY + shipRadius > bottom;
 }
 
 // ============================================================
@@ -376,37 +551,53 @@ void startCrash()
     state = CRASH;
     stateStart = millis();
 
-    for (int i = 0; i < PARTICLE_COUNT; i++)
+    boosting = false;
+
+    if (distanceScore > bestScore)
+        bestScore = distanceScore;
+
+    for (int i = 0; i < EXPLOSION_COUNT; i++)
     {
-        particles[i].x = playerX;
-        particles[i].y = playerY;
+        ExplosionParticle &p = explosion[i];
 
-        particles[i].vx =
-            random(-25, 26) * 0.10f;
+        p.x = shipX;
+        p.y = shipY;
 
-        particles[i].vy =
-            random(-20, 21) * 0.10f;
+        p.vx =
+            random(-40, 41) * 0.11f;
 
-        particles[i].life =
+        p.vy =
+            random(-35, 36) * 0.11f;
+
+        p.life =
             random(12, 30);
 
-        particles[i].colour =
-            random(0, 2)
-            ? COL_YELLOW
-            : COL_RED;
-    }
+        int choice = random(0, 3);
 
-    if (score > highScore)
-        highScore = score;
+        if (choice == 0)
+            p.colour = RED;
+        else if (choice == 1)
+            p.colour = YELLOW;
+        else
+            p.colour = WHITE;
+    }
 }
 
-void updateCrash()
+void drawExplosion()
 {
-    drawRoad();
+    int shakeX = random(-2, 3);
+    int shakeY = random(-2, 3);
 
-    for (int i = 0; i < PARTICLE_COUNT; i++)
+    frame.fillSprite(BLACK);
+
+    updateStars(1.5f);
+
+    generateTunnel();
+    drawTunnel();
+
+    for (int i = 0; i < EXPLOSION_COUNT; i++)
     {
-        Particle &p = particles[i];
+        ExplosionParticle &p = explosion[i];
 
         if (p.life <= 0)
             continue;
@@ -414,23 +605,28 @@ void updateCrash()
         p.x += p.vx;
         p.y += p.vy;
 
-        p.vx *= 0.96f;
-        p.vy *= 0.96f;
+        p.vx *= 0.97f;
+        p.vy *= 0.97f;
 
         p.life--;
 
         frame.fillRect(
-            (int)p.x,
-            (int)p.y,
+            (int)p.x + shakeX,
+            (int)p.y + shakeY,
             2,
             2,
             p.colour
         );
     }
 
-    centreText("CRASH!", 38, 4, COL_RED);
+    centreText(
+        "CRITICAL IMPACT",
+        38 + shakeY,
+        2,
+        RED
+    );
 
-    pushFrame();
+    frame.pushSprite(0, 0);
 
     if (millis() - stateStart > 1400)
     {
@@ -438,27 +634,130 @@ void updateCrash()
         stateStart = millis();
     }
 }
+// ============================================================
+// HUD
+// ============================================================
+
+void drawHUD()
+{
+    frame.fillRect(0, 0, W, 13, BLACK);
+
+    frame.setTextDatum(TL_DATUM);
+    frame.setTextFont(1);
+
+    frame.setTextColor(CYAN, BLACK);
+    frame.drawString("FORGEUI", 3, 3);
+
+    char dist[24];
+
+    snprintf(
+        dist,
+        sizeof(dist),
+        "DIST %05lu",
+        (unsigned long)distanceScore
+    );
+
+    frame.setTextColor(WHITE, BLACK);
+    frame.drawString(dist, 55, 3);
+
+    int shownSpeed =
+        (int)(gameSpeed * 100.0f);
+
+    char speedText[16];
+
+    snprintf(
+        speedText,
+        sizeof(speedText),
+        "%03d",
+        shownSpeed
+    );
+
+    frame.setTextColor(YELLOW, BLACK);
+    frame.drawString(speedText, 145, 3);
+
+    frame.setTextColor(WHITE, BLACK);
+    frame.drawString("BOOST", 187, 3);
+
+    frame.drawRect(
+        226,
+        3,
+        54,
+        7,
+        GREY
+    );
+
+    int boostWidth =
+        map(
+            (int)boost,
+            0,
+            100,
+            0,
+            50
+        );
+
+    uint16_t boostColour =
+        boost > 25.0f
+            ? GREEN
+            : RED;
+
+    frame.fillRect(
+        228,
+        5,
+        boostWidth,
+        3,
+        boostColour
+    );
+}
 
 // ============================================================
-// Title
+// Title screen
 // ============================================================
 
 void drawTitle()
 {
-    frame.fillSprite(COL_BG);
+    frame.fillSprite(BLACK);
 
-    frame.drawFastHLine(22, 12, 240, COL_CYAN);
-    frame.drawFastHLine(22, 63, 240, COL_BLUE);
+    updateStars(0.6f);
 
-    centreText("FORGEUI", 27, 4, COL_CYAN);
-    centreText("MICRO RACER", 47, 2, COL_WHITE);
+    frame.drawFastHLine(
+        24,
+        13,
+        236,
+        CYAN
+    );
 
-    bool flash = ((millis() / 450) % 2) == 0;
+    frame.drawFastHLine(
+        24,
+        64,
+        236,
+        BLUE
+    );
 
-    if (flash)
-        centreText("PRESS STICK TO START", 61, 1, COL_GREEN);
+    centreText(
+        "FORGEUI",
+        28,
+        4,
+        CYAN
+    );
 
-    pushFrame();
+    centreText(
+        "TUNNEL RUN",
+        48,
+        2,
+        WHITE
+    );
+
+    if (((millis() / 450) % 2) == 0)
+    {
+        centreText(
+            "PRESS STICK TO LAUNCH",
+            63,
+            1,
+            GREEN
+        );
+    }
+
+    frame.pushSprite(0, 0);
 }
 
 // ============================================================
@@ -467,45 +766,72 @@ void drawTitle()
 
 void drawGameOver()
 {
-    frame.fillSprite(COL_BG);
+    frame.fillSprite(BLACK);
 
-    centreText("GAME OVER", 18, 4, COL_RED);
+    updateStars(0.4f);
 
-    char scoreLine[40];
+    centreText(
+        "MISSION LOST",
+        19,
+        4,
+        RED
+    );
+
+    char scoreLine[48];
+
     snprintf(
         scoreLine,
         sizeof(scoreLine),
-        "SCORE %lu   BEST %lu",
-        score,
-        highScore
+        "DIST %lu   BEST %lu",
+        (unsigned long)distanceScore,
+        (unsigned long)bestScore
     );
 
-    centreText(scoreLine, 43, 2, COL_WHITE);
+    centreText(
+        scoreLine,
+        45,
+        2,
+        WHITE
+    );
 
-    bool flash = ((millis() / 450) % 2) == 0;
+    if (((millis() / 450) % 2) == 0)
+    {
+        centreText(
+            "PRESS TO RELAUNCH",
+            65,
+            1,
+            GREEN
+        );
+    }
 
-    if (flash)
-        centreText("PRESS TO RACE AGAIN", 64, 1, COL_GREEN);
-
-    pushFrame();
+    frame.pushSprite(0, 0);
 }
 
 // ============================================================
-// New game
+// Start / reset game
 // ============================================================
 
 void startGame()
 {
-    playerX = 38.0f;
-    playerY = 41.0f;
+    shipX = 48.0f;
+    shipY = 38.0f;
 
-    speedValue = 1.8f;
-    roadOffset = 0.0f;
-
-    score = 0;
+    gameSpeed = 1.7f;
     boost = 100.0f;
+    boosting = false;
 
-    resetTraffic();
+    distanceScore = 0;
+
+    tunnelPhase = 0.0f;
+    tunnelScroll = 0.0f;
+
+    for (int i = 0; i < EXHAUST_COUNT; i++)
+        exhaustParticles[i].life = 0;
+
+    for (int i = 0; i < EXPLOSION_COUNT; i++)
+        explosion[i].life = 0;
+
+    generateTunnel();
 
     state = PLAYING;
     stateStart = millis();
@@ -521,77 +847,108 @@ void updateGame()
     int rawY = analogRead(JOY_Y);
 
     float inputX =
-        joystickAxis(rawX, joyCentreX);
+        readAxis(
+            rawX,
+            joyCentreX
+        );
 
     float inputY =
-        joystickAxis(rawY, joyCentreY);
+        readAxis(
+            rawY,
+            joyCentreY
+        );
 
-    // Depending on physical joystick orientation,
-    // one or both signs may later be inverted.
-    playerX += inputX * 2.4f;
-    playerY += inputY * 2.0f;
+    // Ship can move around the left portion of the tunnel.
+    shipX += inputX * 1.8f;
+    shipY += inputY * 2.1f;
 
-    playerX = constrain(playerX, 18.0f, 92.0f);
-    playerY = constrain(playerY, 24.0f, 59.0f);
+    shipX =
+        constrain(
+            shipX,
+            25.0f,
+            95.0f
+        );
 
-    boosting = buttonPressed() && boost > 1.0f;
+    shipY =
+        constrain(
+            shipY,
+            18.0f,
+            H - 7.0f
+        );
 
-    float currentSpeed = speedValue;
+    boosting =
+        buttonPressed() &&
+        boost > 1.0f;
+
+    float currentSpeed =
+        gameSpeed;
 
     if (boosting)
     {
-        currentSpeed *= 1.65f;
-        boost -= 1.15f;
+        currentSpeed *= 1.75f;
+
+        boost -= 1.25f;
     }
     else
     {
-        boost += 0.22f;
+        boost += 0.20f;
     }
 
-    boost = constrain(boost, 0.0f, 100.0f);
+    boost =
+        constrain(
+            boost,
+            0.0f,
+            100.0f
+        );
 
-    roadOffset += currentSpeed * 4.0f;
+    // Gradually increase difficulty.
+    gameSpeed += 0.0007f;
 
-    // Difficulty gradually increases.
-    speedValue += 0.0008f;
+    if (gameSpeed > 4.2f)
+        gameSpeed = 4.2f;
 
-    if (speedValue > 4.7f)
-        speedValue = 4.7f;
+    // Move through procedural tunnel.
+    tunnelScroll +=
+        currentSpeed * 1.5f;
 
-    drawRoad();
-
-    for (int i = 0; i < TRAFFIC_COUNT; i++)
+    while (tunnelScroll >= SEGMENT_W)
     {
-        TrafficCar &car = traffic[i];
+        tunnelScroll -= SEGMENT_W;
 
-        car.x -=
-            currentSpeed * (2.0f + car.speed);
-
-        if (car.x < -15)
-        {
-            spawnTraffic(
-                car,
-                random(20, 110)
-            );
-
-            score += 100;
-        }
-
-        drawTrafficCar(car);
-
-        if (collisionWith(car))
-        {
-            startCrash();
-            return;
-        }
+        tunnelPhase += 0.28f;
     }
 
-    drawPlayer();
+    generateTunnel();
+
+    // Distance rises faster during boost.
+    distanceScore +=
+        boosting ? 3 : 1;
+
+    // Draw complete frame off-screen.
+    frame.fillSprite(BLACK);
+
+    updateStars(
+        boosting
+            ? currentSpeed * 1.5f
+            : currentSpeed
+    );
+
+    drawTunnel();
+
+    updateExhaust();
+
+    drawShip();
+
     drawHUD();
 
-    pushFrame();
+    // Physical collision check after the tunnel is updated.
+    if (shipHitTunnel())
+    {
+        startCrash();
+        return;
+    }
 
-    score++;
+    frame.pushSprite(0, 0);
 }
 
 // ============================================================
@@ -605,41 +962,56 @@ void setup()
 
     Serial.println();
     Serial.println("==============================");
-    Serial.println("FORGEUI MICRO RACER");
+    Serial.println("FORGEUI TUNNEL RUN");
     Serial.println("ESP32-S3 + ST7789 284x76");
     Serial.println("JOY X=6 Y=5 SW=4");
     Serial.println("==============================");
 
-    pinMode(JOY_SW, INPUT_PULLUP);
+    pinMode(
+        JOY_SW,
+        INPUT_PULLUP
+    );
 
     analogReadResolution(12);
 
-    // Physically proven display configuration.
+    // Physically proven ST7789 configuration.
     tft.init();
     tft.invertDisplay(false);
     tft.setRotation(1);
 
+    // Full-screen RGB565 framebuffer.
     frame.setColorDepth(16);
 
     if (frame.createSprite(W, H) == nullptr)
     {
-        Serial.println("ERROR: framebuffer allocation failed");
+        Serial.println(
+            "ERROR: framebuffer allocation failed"
+        );
 
         while (true)
             delay(1000);
     }
 
+    frame.fillSprite(BLACK);
+    frame.pushSprite(0, 0);
+
     randomSeed(
         analogRead(JOY_X) ^
+        analogRead(JOY_Y) ^
         micros()
     );
 
+    initStars();
+
+    // Keep joystick untouched/centred during startup.
     calibrateJoystick();
+
+    generateTunnel();
 
     state = TITLE;
     stateStart = millis();
 
-    // Prevent calibration/start button overlap.
+    // Prevent a held button from instantly starting.
     while (buttonPressed())
         delay(10);
 }
@@ -650,7 +1022,7 @@ void setup()
 
 void loop()
 {
-    // ~30 FPS
+    // Approximately 30 FPS.
     if (millis() - lastFrame < 33)
         return;
 
@@ -658,36 +1030,48 @@ void loop()
 
     static bool previousButton = false;
 
-    bool currentButton = buttonPressed();
-    bool buttonEdge =
-        currentButton && !previousButton;
+    bool currentButton =
+        buttonPressed();
 
-    previousButton = currentButton;
+    bool buttonEdge =
+        currentButton &&
+        !previousButton;
+
+    previousButton =
+        currentButton;
 
     switch (state)
     {
         case TITLE:
+        {
             drawTitle();
 
             if (buttonEdge)
                 startGame();
 
             break;
+        }
 
         case PLAYING:
+        {
             updateGame();
             break;
+        }
 
         case CRASH:
-            updateCrash();
+        {
+            drawExplosion();
             break;
+        }
 
         case GAME_OVER:
+        {
             drawGameOver();
 
             if (buttonEdge)
                 startGame();
 
             break;
+        }
     }
 }
